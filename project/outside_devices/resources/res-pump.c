@@ -31,21 +31,15 @@
 
 /**
  * \file
- *      Erbium (Er) REST Engine example.
+ *      Example resource
  * \author
  *      Matthias Kovatsch <kovatsch@inf.ethz.ch>
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include "contiki.h"
-#include "contiki-net.h"
+
+#include <string.h>
 #include "rest-engine.h"
-
-
-#include "dev/pressure-sensor.h"
-
 
 #define DEBUG 0
 #if DEBUG
@@ -59,56 +53,29 @@
 #define PRINTLLADDR(addr)
 #endif
 
-/*
- * Resources to be activated need to be imported through the extern keyword.
- * The build system automatically compiles the resources in the corresponding sub-directory.
- */
-extern resource_t
-  res_pressure,
-  res_pump;
-  
-PROCESS(device_01_server, "Outside device COAP server");
-AUTOSTART_PROCESSES(&device_01_server);
+static void res_post_handler(void *request, void *response, uint8_t *buffer, uint16_t preferred_size, int32_t *offset);
 
-PROCESS_THREAD(device_01_server, ev, data)
+RESOURCE(res_pump,
+         "title=\"Turn ON/OFF pump\";rt=\"Control\"",
+         NULL,
+         res_post_handler,
+         NULL,
+         NULL);
+
+static void
+res_post_handler(void *request, void *response, uint8_t *buffer, uint16_t preferred_size, int32_t *offset)
 {
-  PROCESS_BEGIN();
-
-  PROCESS_PAUSE();
-
-  PRINTF("Starting Device 01 Server\n");
-
-#ifdef RF_CHANNEL
-  PRINTF("RF channel: %u\n", RF_CHANNEL);
-#endif
-#ifdef IEEE802154_PANID
-  PRINTF("PAN ID: 0x%04X\n", IEEE802154_PANID);
-#endif
-
-  PRINTF("uIP buffer: %u\n", UIP_BUFSIZE);
-  PRINTF("LL header: %u\n", UIP_LLH_LEN);
-  PRINTF("IP+UDP header: %u\n", UIP_IPUDPH_LEN);
-  PRINTF("REST max chunk: %u\n", REST_MAX_CHUNK_SIZE);
-
-  /* Initialize the REST engine. */
-  rest_init_engine();
-
-  /*
-   * Bind the resources to their Uri-Path.
-   * WARNING: Activating twice only means alternate path, not two instances!
-   * All static variables are the same for each URI path.
-   */
-  rest_activate_resource(&res_pressure, "sensors/pressure");
-  rest_activate_resource(&res_pump, "sensors/pressure");
-  
-  pressure_sensor.configure(PRESSURE_SENSOR_DATARATE, LPS331AP_P_12_5HZ_T_1HZ);
-  SENSORS_ACTIVATE(pressure_sensor);
-
-  /* Define application-specific events here. */
-  while(1) {
-    PROCESS_WAIT_EVENT();
-
-  }                             /* while (1) */
-
-  PROCESS_END();
+  size_t len = 0;
+  const char *command = NULL; 
+  int success = 1;
+  if((len = REST.get_request_payload(request, (const uint8_t **)&command))) {
+    if(strncmp(command, "ON", len) == 0) {
+      PRINTF("Turning ON pump\n");
+    } else if(strncmp(command, "OFF", len) == 0) {
+      PRINTF("Turning OFF pump\n");
+    } else {
+      PRINTF("Received wrong data\n");
+    }
+  }
 }
+

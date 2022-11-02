@@ -3,7 +3,7 @@ all: er-example-server er-example-client
 
 CONTIKI=../..
 
-CFLAGS += -DPROJECT_CONF_H=\"project-conf.h\"
+CFLAGS += -DPROJECT_CONF_H=\"project-conf.h\" -I ..
 
 # automatically build RESTful resources
 REST_RESOURCES_DIR = ./resources
