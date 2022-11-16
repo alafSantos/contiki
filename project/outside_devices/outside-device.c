@@ -44,7 +44,7 @@
 #include "rest-engine.h"
 
 
-#include "dev/pressure-sensor.h"
+#include "pressure_sensor.h"
 
 
 #define DEBUG 1
@@ -70,6 +70,8 @@ extern resource_t
 PROCESS(device_01_server, "Outside device COAP server");
 AUTOSTART_PROCESSES(&device_01_server);
 
+linear_tank_t linear_tank;
+
 PROCESS_THREAD(device_01_server, ev, data)
 {
   PROCESS_BEGIN();
@@ -77,6 +79,7 @@ PROCESS_THREAD(device_01_server, ev, data)
   PROCESS_PAUSE();
 
   PRINTF("Starting Device 01 Server\n");
+  clock_init();
 
 #ifdef RF_CHANNEL
   PRINTF("RF channel: %u\n", RF_CHANNEL);
@@ -100,9 +103,8 @@ PROCESS_THREAD(device_01_server, ev, data)
    */
   rest_activate_resource(&res_pressure, "sensors/pressure");
   rest_activate_resource(&res_pump, "sensors/pump");
-  
-  pressure_sensor.configure(PRESSURE_SENSOR_DATARATE, LPS331AP_P_12_5HZ_T_1HZ);
-  SENSORS_ACTIVATE(pressure_sensor);
+ 
+  tank_init(&linear_tank,1000,1000,DEC,2);
 
   /* Define application-specific events here. */
   while(1) {

@@ -42,7 +42,9 @@
 
 #include <string.h>
 #include "rest-engine.h"
-#include "dev/pressure-sensor.h"
+#include "pressure_sensor.h"
+
+extern linear_tank_t linear_tank;
 
 static void res_get_handler(void *request, void *response, uint8_t *buffer, uint16_t preferred_size, int32_t *offset);
 
@@ -57,7 +59,7 @@ RESOURCE(res_pressure,
 static void
 res_get_handler(void *request, void *response, uint8_t *buffer, uint16_t preferred_size, int32_t *offset)
 {
-  float pressure = (float)pressure_sensor.value(0)/ PRESSURE_SENSOR_VALUE_SCALE;
+  float pressure = (float)sensor_get(&linear_tank);
   
   printf("Recevied GET /pressure");
 
