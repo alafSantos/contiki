@@ -41,7 +41,7 @@
 #include <string.h>
 #include "rest-engine.h"
 
-#define DEBUG 0
+#define DEBUG 1
 #if DEBUG
 #include <stdio.h>
 #define PRINTF(...) printf(__VA_ARGS__)
