@@ -1,4 +1,5 @@
-all: er-example-server er-example-client
+all: outside-device
+TARGET = iotlab-m3
 # use target "er-plugtest-server" explicitly when requried 
 
 CONTIKI=../..
