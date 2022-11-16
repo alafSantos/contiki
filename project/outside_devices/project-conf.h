@@ -39,14 +39,7 @@
 #ifndef __PROJECT_ERBIUM_CONF_H__
 #define __PROJECT_ERBIUM_CONF_H__
 
-/* Custom channel and PAN ID configuration for your project. */
-
-   #undef RF_CHANNEL
-   #define RF_CHANNEL                     21
-
-   #undef IEEE802154_CONF_PANID
-   #define IEEE802154_CONF_PANID          0xAB21
-
+#include "../channel_conf.h"
 
 /* IP buffer size must match all other hops, in particular the border router. */
 /*

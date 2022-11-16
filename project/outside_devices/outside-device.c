@@ -47,7 +47,7 @@
 #include "dev/pressure-sensor.h"
 
 
-#define DEBUG 0
+#define DEBUG 1
 #if DEBUG
 #include <stdio.h>
 #define PRINTF(...) printf(__VA_ARGS__)
@@ -99,7 +99,7 @@ PROCESS_THREAD(device_01_server, ev, data)
    * All static variables are the same for each URI path.
    */
   rest_activate_resource(&res_pressure, "sensors/pressure");
-  rest_activate_resource(&res_pump, "sensors/pressure");
+  rest_activate_resource(&res_pump, "sensors/pump");
   
   pressure_sensor.configure(PRESSURE_SENSOR_DATARATE, LPS331AP_P_12_5HZ_T_1HZ);
   SENSORS_ACTIVATE(pressure_sensor);

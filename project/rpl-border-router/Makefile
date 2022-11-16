@@ -1,5 +1,6 @@
 CONTIKI_PROJECT=border-router
 all: $(CONTIKI_PROJECT) 
+TARGET = iotlab-m3
 
 CONTIKI=../..
 

@@ -67,4 +67,6 @@
 #undef SLIP_ARCH_CONF_ENABLE
 #define SLIP_ARCH_CONF_ENABLE 1
 
+#include "../channel_conf.h"
+
 #endif /* PROJECT_ROUTER_CONF_H_ */
