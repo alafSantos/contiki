@@ -102,9 +102,9 @@ PROCESS_THREAD(device_01_server, ev, data)
    * All static variables are the same for each URI path.
    */
   rest_activate_resource(&res_pressure, "sensors/pressure");
-  rest_activate_resource(&res_pump, "sensors/pump");
+  rest_activate_resource(&res_pump, "actuators/pump");
  
-  tank_init(&linear_tank,1000,1000,DEC,2);
+  tank_init(&linear_tank,1000,1000,CONST,2);
 
   /* Define application-specific events here. */
   while(1) {

@@ -40,6 +40,7 @@
 
 #include <string.h>
 #include "rest-engine.h"
+#include "pressure_sensor.h"
 
 #define DEBUG 1
 #if DEBUG
@@ -62,17 +63,24 @@ RESOURCE(res_pump,
          NULL,
          NULL);
 
+extern linear_tank_t linear_tank;
+
 static void
 res_post_handler(void *request, void *response, uint8_t *buffer, uint16_t preferred_size, int32_t *offset)
 {
   size_t len = 0;
   const char *command = NULL; 
-  int success = 1;
+  
+  REST.set_response_status(response, REST.status.BAD_REQUEST);
   if((len = REST.get_request_payload(request, (const uint8_t **)&command))) {
     if(strncmp(command, "ON", len) == 0) {
       PRINTF("Turning ON pump\n");
+      change_state(&linear_tank,DEC);
+      REST.set_response_status(response, REST.status.OK);
     } else if(strncmp(command, "OFF", len) == 0) {
       PRINTF("Turning OFF pump\n");
+      change_state(&linear_tank,INC);
+      REST.set_response_status(response, REST.status.OK);
     } else {
       PRINTF("Received wrong data\n");
     }
