@@ -13,3 +13,4 @@ typedef struct {
 int sensor_get(linear_tank_t* tank);
 void tank_init(linear_tank_t* tank,int max, int value,slope_state state,int slope);
 void change_state(linear_tank_t* tank,slope_state state);
+const char* slope_state_as_str(slope_state s); 
