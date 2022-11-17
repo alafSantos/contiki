@@ -1,4 +1,4 @@
-all: er-example-client
+all: processing_device
 
 TARGET = iotlab-m3
 CONTIKI = ../..
