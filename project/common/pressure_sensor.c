@@ -33,13 +33,13 @@ void tank_init(linear_tank_t* tank,int max, int value,slope_state state,int slop
 void change_state(linear_tank_t* tank,slope_state state){
     tank->state = state;
 }
-static const char* str_value[]= {"INC","DEC","CONST"};
+static const char* str_value[]= {"INC","DEC","CONST","BAD"};
 const char* slope_state_as_str(slope_state s){
     switch (s)
     {
     case INC: return str_value[0];
     case DEC: return str_value[1];
     case CONST: return str_value[2];
-    default: return str_value[2];
+    default: return str_value[3];
     }
 }

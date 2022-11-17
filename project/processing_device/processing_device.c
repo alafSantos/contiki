@@ -64,7 +64,7 @@
 #define LOCAL_PORT UIP_HTONS(COAP_DEFAULT_PORT + 1)
 #define REMOTE_PORT UIP_HTONS(COAP_DEFAULT_PORT)
 
-#define TOGGLE_INTERVAL 1
+#define TOGGLE_INTERVAL 5
 #define LOW_THRESHOLD 11
 #define HIGH_THRESHOLD 200
 
@@ -81,16 +81,24 @@ linear_tank_t linear_tank;
 char *service_urls[NUMBER_OF_URLS] =
     {"/sensors/pressure", "/actuators/pump"};
 
-//static enum client_state {
-//  ASKING_PRESSURE
-//};
+enum processing_state_t
+{
+  TRY_FILLING,
+  FILLING,
+  WAITING,
+  EMPTYING
+};
+static enum processing_state_t processing_state;
 
 static enum {
   ON,
   OFF
-}asked_pump_state;
+} asked_pump_state;
 
 static float response_pressure = -1;
+
+const char *process_state_as_str(enum processing_state_t s);
+
 /* This function is will be passed to COAP_BLOCKING_REQUEST() to handle responses. */
 void get_pressure_handler(void *response)
 {
@@ -99,11 +107,11 @@ void get_pressure_handler(void *response)
 
   int len = coap_get_payload(response, &chunk);
 
-  strncpy(buffer, (const char*)chunk, len);
+  strncpy(buffer, (const char *)chunk, len);
   buffer[len] = '\0';
   sscanf(buffer, "%f", &response_pressure);
-
-  printf("|%.*s", len, (char *)chunk);
+  printf("|%.*s\n", len, (char *)chunk);
+  printf("|%f\n", response_pressure);
 }
 
 void post_pump_handler(void *response)
@@ -112,6 +120,10 @@ void post_pump_handler(void *response)
   if (code != REST.status.OK)
   {
     printf("Request bad\n");
+    if (processing_state == FILLING)
+      processing_state = TRY_FILLING; // Backtrack
+    if (processing_state == WAITING)
+      processing_state = FILLING; // Backtrack
     return;
   }
   printf("Request OK\n");
@@ -131,18 +143,24 @@ PROCESS_THREAD(er_example_client, ev, data)
 
   /* receives all CoAP messages */
   coap_init_engine();
-  tank_init(&linear_tank,1000,0,CONST,2);
+  tank_init(&linear_tank, 1000, 0, CONST, 2);
+  processing_state = EMPTYING;
   etimer_set(&et, TOGGLE_INTERVAL * CLOCK_SECOND);
-
+  static float pressure = 0;
   while (1)
   {
     PROCESS_YIELD();
 
     if (etimer_expired(&et))
     {
-      float pressure = sensor_get(&linear_tank);
-      printf("Pressure registered: %f, container %s",pressure, slope_state_as_str(linear_tank.state));
-      if (pressure <= LOW_THRESHOLD)
+      pressure = sensor_get(&linear_tank);
+      printf("Pressure registered: %f, container %s, state %s\n", pressure, slope_state_as_str(linear_tank.state), process_state_as_str(processing_state));
+      if (processing_state == EMPTYING && pressure <= LOW_THRESHOLD)
+      {
+        processing_state = TRY_FILLING;
+      }
+
+      if (processing_state == FILLING || processing_state == TRY_FILLING)
       {
         printf("Asking pressures\n");
 
@@ -152,10 +170,11 @@ PROCESS_THREAD(er_example_client, ev, data)
         COAP_BLOCKING_REQUEST(&server_ipaddr, REMOTE_PORT, &request[0],
                               get_pressure_handler);
       }
-      else if (HIGH_THRESHOLD - response_pressure < pressure && pressure < HIGH_THRESHOLD )
+
+      if (processing_state == TRY_FILLING && HIGH_THRESHOLD - response_pressure < pressure && pressure < HIGH_THRESHOLD)
       {
         printf("Asking pump on\n");
-
+        processing_state = FILLING;
         coap_init_message(&request[1], COAP_TYPE_CON, COAP_POST, 0);
         coap_set_header_uri_path(&request[1], service_urls[1]);
 
@@ -167,10 +186,11 @@ PROCESS_THREAD(er_example_client, ev, data)
         COAP_BLOCKING_REQUEST(&server_ipaddr, REMOTE_PORT, &request[1],
                               post_pump_handler);
       }
-      else if (pressure >= HIGH_THRESHOLD)
+
+      if (processing_state == FILLING && pressure >= HIGH_THRESHOLD)
       {
         printf("Asking pump off\n");
-
+        processing_state = WAITING;
         coap_init_message(&request[1], COAP_TYPE_CON, COAP_POST, 0);
         coap_set_header_uri_path(&request[1], service_urls[1]);
 
@@ -183,14 +203,30 @@ PROCESS_THREAD(er_example_client, ev, data)
                               post_pump_handler);
       }
 
-      PRINT6ADDR(&server_ipaddr);
-      PRINTF(" : %u\n", UIP_HTONS(REMOTE_PORT));
-
-      printf("\n--Done--\n");
+      // PRINT6ADDR(&server_ipaddr);
+      // PRINTF(" : %u\n", UIP_HTONS(REMOTE_PORT));
 
       etimer_reset(&et);
     }
   }
 
   PROCESS_END();
+}
+
+static const char *str_value[] = {"TRY_FILLING", "FILLING", "WAITING", "EMPTYING"};
+const char *process_state_as_str(enum processing_state_t s)
+{
+  switch (s)
+  {
+  case TRY_FILLING:
+    return str_value[0];
+  case FILLING:
+    return str_value[1];
+  case WAITING:
+    return str_value[2];
+  case EMPTYING:
+    return str_value[3];
+  default:
+    return str_value[0];
+  }
 }
