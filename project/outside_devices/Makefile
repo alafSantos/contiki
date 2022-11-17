@@ -18,7 +18,7 @@ REST_RESOURCES_FILES = $(notdir $(shell find $(REST_RESOURCES_DIR) -name '*.c' !
 endif
 endif
 
-PROJECTDIRS += $(REST_RESOURCES_DIR)
+PROJECTDIRS += $(REST_RESOURCES_DIR) ../common
 PROJECT_SOURCEFILES += $(REST_RESOURCES_FILES) pressure_sensor.c
 
 # linker optimizations
