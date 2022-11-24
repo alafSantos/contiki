@@ -39,8 +39,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "contiki.h"
+
 #include "contiki-net.h"
+#include "contiki.h"
 #include "er-coap-engine.h"
 #include "pressure_sensor.h"
 
@@ -67,6 +68,7 @@
 #define TOGGLE_INTERVAL 5
 #define LOW_THRESHOLD 11
 #define HIGH_THRESHOLD 200
+#define PROCESSING_TIME 40
 
 PROCESS(er_example_client, "Erbium Example Client");
 AUTOSTART_PROCESSES(&er_example_client);
@@ -81,18 +83,17 @@ linear_tank_t linear_tank;
 char *service_urls[NUMBER_OF_URLS] =
     {"/sensors/pressure", "/actuators/pump"};
 
-enum processing_state_t
-{
-  TRY_FILLING,
-  FILLING,
-  WAITING,
-  EMPTYING
+enum processing_state_t {
+    TRY_FILLING,
+    FILLING,
+    WAITING,
+    EMPTYING
 };
 static enum processing_state_t processing_state;
 
 static enum {
-  ON,
-  OFF
+    ON,
+    OFF
 } asked_pump_state;
 
 static float response_pressure = -1;
@@ -100,133 +101,137 @@ static float response_pressure = -1;
 const char *process_state_as_str(enum processing_state_t s);
 
 /* This function is will be passed to COAP_BLOCKING_REQUEST() to handle responses. */
-void get_pressure_handler(void *response)
-{
-  const uint8_t *chunk;
-  char buffer[256];
+void get_pressure_handler(void *response) {
+    const uint8_t *chunk;
+    char buffer[256];
 
-  int len = coap_get_payload(response, &chunk);
+    int len = coap_get_payload(response, &chunk);
 
-  strncpy(buffer, (const char *)chunk, len);
-  buffer[len] = '\0';
-  sscanf(buffer, "%f", &response_pressure);
-  printf("|%.*s\n", len, (char *)chunk);
-  printf("|%f\n", response_pressure);
+    strncpy(buffer, (const char *)chunk, len);
+    buffer[len] = '\0';
+    sscanf(buffer, "%f", &response_pressure);
+    // printf("|%.*s\n", len, (char *)chunk);
+    printf("|%f\n", response_pressure);
 }
-
-void post_pump_handler(void *response)
-{
-  unsigned int code = ((coap_packet_t *)response)->code;
-  if (code != REST.status.OK)
-  {
-    printf("Request bad\n");
-    if (processing_state == FILLING)
-      processing_state = TRY_FILLING; // Backtrack
-    if (processing_state == WAITING)
-      processing_state = FILLING; // Backtrack
-    return;
-  }
-  printf("Request OK\n");
-  if (asked_pump_state == ON)
-    change_state(&linear_tank, INC);
-  else
-    change_state(&linear_tank, CONST);
-}
-
-PROCESS_THREAD(er_example_client, ev, data)
-{
-  PROCESS_BEGIN();
-
-  static coap_packet_t request[2]; /* This way the packet can be treated as pointer as usual. */
-
-  DEV_0(&server_ipaddr);
-
-  /* receives all CoAP messages */
-  coap_init_engine();
-  tank_init(&linear_tank, 1000, 0, CONST, 2);
-  processing_state = EMPTYING;
-  etimer_set(&et, TOGGLE_INTERVAL * CLOCK_SECOND);
-  static float pressure = 0;
-  while (1)
-  {
-    PROCESS_YIELD();
-
-    if (etimer_expired(&et))
-    {
-      pressure = sensor_get(&linear_tank);
-      printf("Pressure registered: %f, container %s, state %s\n", pressure, slope_state_as_str(linear_tank.state), process_state_as_str(processing_state));
-      if (processing_state == EMPTYING && pressure <= LOW_THRESHOLD)
-      {
-        processing_state = TRY_FILLING;
-      }
-
-      if (processing_state == FILLING || processing_state == TRY_FILLING)
-      {
-        printf("Asking pressures\n");
-
-        coap_init_message(&request[0], COAP_TYPE_CON, COAP_GET, 0);
-        coap_set_header_uri_path(&request[0], service_urls[0]);
-
-        COAP_BLOCKING_REQUEST(&server_ipaddr, REMOTE_PORT, &request[0],
-                              get_pressure_handler);
-      }
-
-      if (processing_state == TRY_FILLING && HIGH_THRESHOLD - response_pressure < pressure && pressure < HIGH_THRESHOLD)
-      {
-        printf("Asking pump on\n");
-        processing_state = FILLING;
-        coap_init_message(&request[1], COAP_TYPE_CON, COAP_POST, 0);
-        coap_set_header_uri_path(&request[1], service_urls[1]);
-
-        const char msg[] = "ON";
-        asked_pump_state = ON;
-
-        coap_set_payload(&request[1], (uint8_t *)msg, sizeof(msg) - 1);
-
-        COAP_BLOCKING_REQUEST(&server_ipaddr, REMOTE_PORT, &request[1],
-                              post_pump_handler);
-      }
-
-      if (processing_state == FILLING && pressure >= HIGH_THRESHOLD)
-      {
-        printf("Asking pump off\n");
-        processing_state = WAITING;
-        coap_init_message(&request[1], COAP_TYPE_CON, COAP_POST, 0);
-        coap_set_header_uri_path(&request[1], service_urls[1]);
-
-        const char msg[] = "OFF";
-        asked_pump_state = OFF;
-
-        coap_set_payload(&request[1], (uint8_t *)msg, sizeof(msg) - 1);
-
-        COAP_BLOCKING_REQUEST(&server_ipaddr, REMOTE_PORT, &request[1],
-                              post_pump_handler);
-      }
-
-      // PRINT6ADDR(&server_ipaddr);
-      // PRINTF(" : %u\n", UIP_HTONS(REMOTE_PORT));
-
-      etimer_reset(&et);
+int ok = 0;
+void post_pump_handler(void *response) {
+    unsigned int code = ((coap_packet_t *)response)->code;
+    if (code != REST.status.OK) {
+        printf("Request bad\n");
+        if (processing_state == FILLING)
+            processing_state = TRY_FILLING;  // Backtrack
+        if (processing_state == WAITING)
+            processing_state = FILLING;  // Backtrack
+        return;
     }
-  }
+    printf("Request OK\n");
+    if (asked_pump_state == ON) {
+        change_state(&linear_tank, INC);
+    } else {
+        change_state(&linear_tank, CONST);
+    }
+    if (processing_state == WAITING && asked_pump_state == OFF) {
+        etimer_stop(&et);
+        etimer_set(&et, PROCESSING_TIME * CLOCK_SECOND);
+        etimer_restart(&et);
+    }
+}
 
-  PROCESS_END();
+PROCESS_THREAD(er_example_client, ev, data) {
+    PROCESS_BEGIN();
+
+    static coap_packet_t request[2]; /* This way the packet can be treated as pointer as usual. */
+
+    DEV_0(&server_ipaddr);
+
+    /* receives all CoAP messages */
+    coap_init_engine();
+    tank_init(&linear_tank, 1000, 0, CONST, 2);
+    processing_state = EMPTYING;
+    etimer_set(&et, TOGGLE_INTERVAL * CLOCK_SECOND);
+    static float pressure = 0;
+    while (1) {
+        PROCESS_YIELD();
+
+        if (etimer_expired(&et)) {
+            pressure = sensor_get(&linear_tank);
+            printf("Pressure registered: %f, container %s, state %s\n", pressure, slope_state_as_str(linear_tank.state), process_state_as_str(processing_state));
+            if (processing_state == EMPTYING && pressure <= LOW_THRESHOLD) {
+                processing_state = TRY_FILLING;
+            }
+
+            if (processing_state == FILLING || processing_state == TRY_FILLING) {
+                printf("Asking pressures\n");
+
+                coap_init_message(&request[0], COAP_TYPE_CON, COAP_GET, 0);
+                coap_set_header_uri_path(&request[0], service_urls[0]);
+
+                COAP_BLOCKING_REQUEST(&server_ipaddr, REMOTE_PORT, &request[0],
+                                      get_pressure_handler);
+            }
+
+            if (processing_state == TRY_FILLING && HIGH_THRESHOLD - response_pressure < pressure && pressure < HIGH_THRESHOLD) {
+                printf("Asking pump on\n");
+                processing_state = FILLING;
+                coap_init_message(&request[1], COAP_TYPE_CON, COAP_POST, 0);
+                coap_set_header_uri_path(&request[1], service_urls[1]);
+
+                const char msg[] = "ON";
+                asked_pump_state = ON;
+
+                coap_set_payload(&request[1], (uint8_t *)msg, sizeof(msg) - 1);
+
+                COAP_BLOCKING_REQUEST(&server_ipaddr, REMOTE_PORT, &request[1],
+                                      post_pump_handler);
+                //if(ok)
+                //  processing_state = FILLING;
+            }
+
+            if (processing_state == FILLING && pressure >= HIGH_THRESHOLD) {
+                printf("Asking pump off\n");
+                processing_state = WAITING;
+                coap_init_message(&request[1], COAP_TYPE_CON, COAP_POST, 0);
+                coap_set_header_uri_path(&request[1], service_urls[1]);
+
+                const char msg[] = "OFF";
+                asked_pump_state = OFF;
+
+                coap_set_payload(&request[1], (uint8_t *)msg, sizeof(msg) - 1);
+
+                COAP_BLOCKING_REQUEST(&server_ipaddr, REMOTE_PORT, &request[1],
+                                      post_pump_handler);
+
+                continue;
+            }
+            if (processing_state == WAITING && etimer_expired(&et)) {
+                processing_state = EMPTYING;
+                printf("Finishing wait\n");
+                change_state(&linear_tank, DEC);
+                etimer_stop(&et);
+                etimer_set(&et, TOGGLE_INTERVAL * CLOCK_SECOND);
+                etimer_restart(&et);
+                continue;
+            }
+
+            etimer_reset(&et);
+        }
+    }
+
+    PROCESS_END();
 }
 
 static const char *str_value[] = {"TRY_FILLING", "FILLING", "WAITING", "EMPTYING"};
-const char *process_state_as_str(enum processing_state_t s)
-{
-  switch (s)
-  {
-  case TRY_FILLING:
-    return str_value[0];
-  case FILLING:
-    return str_value[1];
-  case WAITING:
-    return str_value[2];
-  case EMPTYING:
-    return str_value[3];
-  default:
-    return str_value[0];
-  }
+const char *process_state_as_str(enum processing_state_t s) {
+    switch (s) {
+        case TRY_FILLING:
+            return str_value[0];
+        case FILLING:
+            return str_value[1];
+        case WAITING:
+            return str_value[2];
+        case EMPTYING:
+            return str_value[3];
+        default:
+            return str_value[0];
+    }
 }
