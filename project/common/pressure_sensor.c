@@ -31,8 +31,10 @@ void tank_init(linear_tank_t* tank,int max, int value,slope_state state,int slop
 }
 
 void change_state(linear_tank_t* tank,slope_state state){
+    sensor_get(tank);
     tank->state = state;
 }
+
 static const char* str_value[]= {"INC","DEC","CONST","BAD"};
 const char* slope_state_as_str(slope_state s){
     switch (s)

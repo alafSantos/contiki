@@ -68,7 +68,7 @@
 #define TOGGLE_INTERVAL 5
 #define LOW_THRESHOLD 11
 #define HIGH_THRESHOLD 200
-#define PROCESSING_TIME 40
+#define PROCESSING_TIME 20
 
 PROCESS(er_example_client, "Erbium Example Client");
 AUTOSTART_PROCESSES(&er_example_client);
@@ -110,31 +110,18 @@ void get_pressure_handler(void *response) {
     strncpy(buffer, (const char *)chunk, len);
     buffer[len] = '\0';
     sscanf(buffer, "%f", &response_pressure);
-    // printf("|%.*s\n", len, (char *)chunk);
     printf("|%f\n", response_pressure);
 }
 int ok = 0;
 void post_pump_handler(void *response) {
+    ok = 1;
     unsigned int code = ((coap_packet_t *)response)->code;
     if (code != REST.status.OK) {
         printf("Request bad\n");
-        if (processing_state == FILLING)
-            processing_state = TRY_FILLING;  // Backtrack
-        if (processing_state == WAITING)
-            processing_state = FILLING;  // Backtrack
+        ok = 0;
         return;
     }
     printf("Request OK\n");
-    if (asked_pump_state == ON) {
-        change_state(&linear_tank, INC);
-    } else {
-        change_state(&linear_tank, CONST);
-    }
-    if (processing_state == WAITING && asked_pump_state == OFF) {
-        etimer_stop(&et);
-        etimer_set(&et, PROCESSING_TIME * CLOCK_SECOND);
-        etimer_restart(&et);
-    }
 }
 
 PROCESS_THREAD(er_example_client, ev, data) {
@@ -183,13 +170,15 @@ PROCESS_THREAD(er_example_client, ev, data) {
 
                 COAP_BLOCKING_REQUEST(&server_ipaddr, REMOTE_PORT, &request[1],
                                       post_pump_handler);
-                //if(ok)
-                //  processing_state = FILLING;
+                if (ok){
+                  change_state(&linear_tank, INC);
+                  processing_state = FILLING;
+                }
+                    
             }
 
             if (processing_state == FILLING && pressure >= HIGH_THRESHOLD) {
                 printf("Asking pump off\n");
-                processing_state = WAITING;
                 coap_init_message(&request[1], COAP_TYPE_CON, COAP_POST, 0);
                 coap_set_header_uri_path(&request[1], service_urls[1]);
 
@@ -200,13 +189,26 @@ PROCESS_THREAD(er_example_client, ev, data) {
 
                 COAP_BLOCKING_REQUEST(&server_ipaddr, REMOTE_PORT, &request[1],
                                       post_pump_handler);
+                
+                if (ok) {
+                    processing_state = WAITING;
+                    change_state(&linear_tank, DEC);
+
+                    etimer_stop(&et);
+                    etimer_set(&et, PROCESSING_TIME * CLOCK_SECOND);
+                    etimer_restart(&et);
+
+                    printf("Sleeping for process\n");
+                }
 
                 continue;
             }
             if (processing_state == WAITING && etimer_expired(&et)) {
                 processing_state = EMPTYING;
                 printf("Finishing wait\n");
+
                 change_state(&linear_tank, DEC);
+
                 etimer_stop(&et);
                 etimer_set(&et, TOGGLE_INTERVAL * CLOCK_SECOND);
                 etimer_restart(&et);

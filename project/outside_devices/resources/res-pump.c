@@ -54,6 +54,8 @@
 #define PRINTLLADDR(addr)
 #endif
 
+#define LOW_THRESHOLD 11
+
 static void res_post_handler(void *request, void *response, uint8_t *buffer, uint16_t preferred_size, int32_t *offset);
 
 RESOURCE(res_pump,
@@ -74,9 +76,15 @@ res_post_handler(void *request, void *response, uint8_t *buffer, uint16_t prefer
   REST.set_response_status(response, REST.status.BAD_REQUEST);
   if((len = REST.get_request_payload(request, (const uint8_t **)&command))) {
     if(strncmp(command, "ON", len) == 0) {
-      PRINTF("Turning ON pump\n");
-      change_state(&linear_tank,DEC);
-      REST.set_response_status(response, REST.status.OK);
+
+      if(sensor_get(&linear_tank) > LOW_THRESHOLD){
+        PRINTF("Turning ON pump\n");
+        change_state(&linear_tank,DEC);
+        REST.set_response_status(response, REST.status.OK);
+      } else {
+        PRINTF("Cannot turn ON pump, no pressure\n");
+      }
+      
     } else if(strncmp(command, "OFF", len) == 0) {
       PRINTF("Turning OFF pump\n");
       change_state(&linear_tank,INC);
