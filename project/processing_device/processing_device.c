@@ -60,6 +60,7 @@
 /* FIXME: This server address is hard-coded for Cooja and link-local for unconnected border router. */
 // 2001:0660:4403:04c2::b070
 #define DEV_0(ipaddr) uip_ip6addr(ipaddr, 0x2001, 0x0660, 0x4403, 0x04c2, 0x0, 0x0, 0x0, 0xb070)
+#define DEV_1(ipaddr) uip_ip6addr(ipaddr, 0x2001, 0x0660, 0x4403, 0x04c2, 0x0, 0x0, 0x0, 0x2450)
 /* #define SERVER_NODE(ipaddr)   uip_ip6addr(ipaddr, 0xbbbb, 0, 0, 0, 0, 0, 0, 0x1) */
 
 #define LOCAL_PORT UIP_HTONS(COAP_DEFAULT_PORT + 1)
@@ -73,7 +74,7 @@
 PROCESS(er_example_client, "Erbium Example Client");
 AUTOSTART_PROCESSES(&er_example_client);
 
-uip_ipaddr_t server_ipaddr;
+uip_ipaddr_t server_ipaddr[2];
 static struct etimer et;
 linear_tank_t linear_tank;
 
@@ -91,11 +92,6 @@ enum processing_state_t {
 };
 static enum processing_state_t processing_state;
 
-static enum {
-    ON,
-    OFF
-} asked_pump_state;
-
 static float response_pressure = -1;
 
 const char *process_state_as_str(enum processing_state_t s);
@@ -106,6 +102,11 @@ void get_pressure_handler(void *response) {
     char buffer[256];
 
     int len = coap_get_payload(response, &chunk);
+    unsigned int code = ((coap_packet_t *)response)->code;
+    if (code != REST.status.OK || len == 0) {
+        response_pressure = -1;
+        return;
+    }
 
     strncpy(buffer, (const char *)chunk, len);
     buffer[len] = '\0';
@@ -127,69 +128,112 @@ void post_pump_handler(void *response) {
 PROCESS_THREAD(er_example_client, ev, data) {
     PROCESS_BEGIN();
 
-    static coap_packet_t request[2]; /* This way the packet can be treated as pointer as usual. */
+    static coap_packet_t request[3]; /* This way the packet can be treated as pointer as usual. */
 
-    DEV_0(&server_ipaddr);
+    DEV_0(&server_ipaddr[0]);
+    DEV_1(&server_ipaddr[1]);
 
     /* receives all CoAP messages */
     coap_init_engine();
-    tank_init(&linear_tank, 1000, 0, CONST, 2);
+    tank_init(&linear_tank, 1000, 0, CONST, 80);
     processing_state = EMPTYING;
     etimer_set(&et, TOGGLE_INTERVAL * CLOCK_SECOND);
     static float pressure = 0;
+    static int filling_from = 0;
+
+    static const char *msg[] = {"ON", "OFF"};
+
+    coap_init_message(&request[0], COAP_TYPE_CON, COAP_GET, 0);
+    coap_set_header_uri_path(&request[0], service_urls[0]);
+
+    coap_init_message(&request[1], COAP_TYPE_CON, COAP_POST, 0);
+    coap_set_header_uri_path(&request[1], service_urls[1]);
+    coap_set_payload(&request[1], (uint8_t *)msg[0], /*sizeof(msg[0]) - 1*/ strlen(msg[0]));
+
+    coap_init_message(&request[2], COAP_TYPE_CON, COAP_POST, 0);
+    coap_set_header_uri_path(&request[2], service_urls[1]);
+    coap_set_payload(&request[2], (uint8_t *)msg[1], strlen(msg[1]));
+
     while (1) {
         PROCESS_YIELD();
 
         if (etimer_expired(&et)) {
             pressure = sensor_get(&linear_tank);
+            static float dev_pressures[2] = {-1, -1};
+
             printf("Pressure registered: %f, container %s, state %s\n", pressure, slope_state_as_str(linear_tank.state), process_state_as_str(processing_state));
+            // The tank is completely empty and can try to start a new cycle
             if (processing_state == EMPTYING && pressure <= LOW_THRESHOLD) {
                 processing_state = TRY_FILLING;
+                filling_from = 0;
             }
 
+            // During these states I always ask for tank pressures
             if (processing_state == FILLING || processing_state == TRY_FILLING) {
                 printf("Asking pressures\n");
 
-                coap_init_message(&request[0], COAP_TYPE_CON, COAP_GET, 0);
-                coap_set_header_uri_path(&request[0], service_urls[0]);
-
-                COAP_BLOCKING_REQUEST(&server_ipaddr, REMOTE_PORT, &request[0],
+                COAP_BLOCKING_REQUEST(&server_ipaddr[0], REMOTE_PORT, &request[0],
                                       get_pressure_handler);
+                dev_pressures[0] = response_pressure;
+
+                COAP_BLOCKING_REQUEST(&server_ipaddr[1], REMOTE_PORT, &request[0],
+                                      get_pressure_handler);
+                dev_pressures[1] = response_pressure;
             }
 
-            if (processing_state == TRY_FILLING && HIGH_THRESHOLD - response_pressure < pressure && pressure < HIGH_THRESHOLD) {
-                printf("Asking pump on\n");
-                processing_state = FILLING;
-                coap_init_message(&request[1], COAP_TYPE_CON, COAP_POST, 0);
-                coap_set_header_uri_path(&request[1], service_urls[1]);
+            if (dev_pressures[0] + dev_pressures[1] < HIGH_THRESHOLD - pressure) {
+                // Error, can't continue
+                printf("pressures: %f,%f\n", dev_pressures[0], dev_pressures[1]);
+                printf("Sending alarm, can't continue\n");
 
-                const char msg[] = "ON";
-                asked_pump_state = ON;
-
-                coap_set_payload(&request[1], (uint8_t *)msg, sizeof(msg) - 1);
-
-                COAP_BLOCKING_REQUEST(&server_ipaddr, REMOTE_PORT, &request[1],
+                COAP_BLOCKING_REQUEST(&server_ipaddr[filling_from], REMOTE_PORT, &request[2],
                                       post_pump_handler);
-                if (ok){
-                  change_state(&linear_tank, INC);
-                  processing_state = FILLING;
+                if (ok) {
+                    change_state(&linear_tank, CONST);
+                    etimer_stop(&et);
+                    PROCESS_WAIT_EVENT();
                 }
-                    
             }
 
+            // Can start a filling cycle
+            if (processing_state == TRY_FILLING && HIGH_THRESHOLD - response_pressure < pressure && pressure < HIGH_THRESHOLD) {
+                if (dev_pressures[0] < LOW_THRESHOLD) {
+                    filling_from = 1;
+                }
+                printf("Asking pump on to %d\n", filling_from);
+
+                COAP_BLOCKING_REQUEST(&server_ipaddr[filling_from], REMOTE_PORT, &request[1],
+                                      post_pump_handler);
+                if (ok) {
+                    change_state(&linear_tank, INC);
+                    processing_state = FILLING;
+                }
+            }
+
+            // Tank from which i'm filling is empty
+            if (processing_state == FILLING && dev_pressures[filling_from] < LOW_THRESHOLD) {
+                printf("Swtiching to secondary tank\n");
+                COAP_BLOCKING_REQUEST(&server_ipaddr[filling_from], REMOTE_PORT, &request[2],
+                                      post_pump_handler);
+                if (ok) {
+                    change_state(&linear_tank, CONST);
+                }
+
+                if (filling_from == 0) {
+                    // switch to secondary tank
+                } else if (dev_pressures[0] > LOW_THRESHOLD) {
+                    // primary tank is again full
+                } else {
+                }
+            }
+
+            // filling tank, is full; stop to wait
             if (processing_state == FILLING && pressure >= HIGH_THRESHOLD) {
                 printf("Asking pump off\n");
-                coap_init_message(&request[1], COAP_TYPE_CON, COAP_POST, 0);
-                coap_set_header_uri_path(&request[1], service_urls[1]);
 
-                const char msg[] = "OFF";
-                asked_pump_state = OFF;
-
-                coap_set_payload(&request[1], (uint8_t *)msg, sizeof(msg) - 1);
-
-                COAP_BLOCKING_REQUEST(&server_ipaddr, REMOTE_PORT, &request[1],
+                COAP_BLOCKING_REQUEST(&server_ipaddr[0], REMOTE_PORT, &request[2],
                                       post_pump_handler);
-                
+
                 if (ok) {
                     processing_state = WAITING;
                     change_state(&linear_tank, DEC);
@@ -200,22 +244,23 @@ PROCESS_THREAD(er_example_client, ev, data) {
 
                     printf("Sleeping for process\n");
                 }
-
-                continue;
             }
+            // wait time finished, open outgoing pump and free tank
             if (processing_state == WAITING && etimer_expired(&et)) {
                 processing_state = EMPTYING;
                 printf("Finishing wait\n");
 
                 change_state(&linear_tank, DEC);
+                filling_from = 0;
 
                 etimer_stop(&et);
                 etimer_set(&et, TOGGLE_INTERVAL * CLOCK_SECOND);
                 etimer_restart(&et);
-                continue;
             }
 
-            etimer_reset(&et);
+            if (etimer_expired(&et)) {
+                etimer_reset(&et);
+            }
         }
     }
 

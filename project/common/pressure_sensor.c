@@ -13,12 +13,12 @@ int sensor_get(linear_tank_t* tank){
         case DEC:   mult = -1;break;
         case CONST: mult = 0;break;
     }
-    tank->value = tank->value + tank->slope * time_spent * mult + random_variance();
+    tank->value = tank->value + (tank->slope * time_spent * mult) + (random_variance() * tank->max / 100) ;
     if(tank->state == INC) 
         tank->value %= tank->max;
     if(tank->value < 0)
         tank->value = 0;
-    
+    tank->last_read = clock_seconds();
     return tank->value;
 }
 
