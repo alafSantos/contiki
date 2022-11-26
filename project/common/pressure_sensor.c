@@ -1,4 +1,4 @@
-#define VARIANCE 10
+#define VARIANCE 1
 #include "contiki.h"
 #include "pressure_sensor.h"
 

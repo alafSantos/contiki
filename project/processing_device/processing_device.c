@@ -111,7 +111,7 @@ void get_pressure_handler(void *response) {
     strncpy(buffer, (const char *)chunk, len);
     buffer[len] = '\0';
     sscanf(buffer, "%f", &response_pressure);
-    printf("|%f\n", response_pressure);
+    printf(" %f\n", response_pressure);
 }
 int ok = 0;
 void post_pump_handler(void *response) {
@@ -122,7 +122,7 @@ void post_pump_handler(void *response) {
         ok = 0;
         return;
     }
-    printf("Request OK\n");
+    //printf("Request OK\n");
 }
 
 PROCESS_THREAD(er_example_client, ev, data) {
@@ -135,7 +135,7 @@ PROCESS_THREAD(er_example_client, ev, data) {
 
     /* receives all CoAP messages */
     coap_init_engine();
-    tank_init(&linear_tank, 1000, 0, CONST, 80);
+    tank_init(&linear_tank, 300, 0, CONST, 80);
     processing_state = EMPTYING;
     etimer_set(&et, TOGGLE_INTERVAL * CLOCK_SECOND);
     static float pressure = 0;
@@ -171,11 +171,11 @@ PROCESS_THREAD(er_example_client, ev, data) {
             // During these states I always ask for tank pressures
             if (processing_state == FILLING || processing_state == TRY_FILLING) {
                 printf("Asking pressures\n");
-
+                printf("Device 0:");
                 COAP_BLOCKING_REQUEST(&server_ipaddr[0], REMOTE_PORT, &request[0],
                                       get_pressure_handler);
                 dev_pressures[0] = response_pressure;
-
+                printf("Device 1:");
                 COAP_BLOCKING_REQUEST(&server_ipaddr[1], REMOTE_PORT, &request[0],
                                       get_pressure_handler);
                 dev_pressures[1] = response_pressure;
@@ -216,7 +216,7 @@ PROCESS_THREAD(er_example_client, ev, data) {
                 COAP_BLOCKING_REQUEST(&server_ipaddr[filling_from], REMOTE_PORT, &request[2],
                                       post_pump_handler);
                 if (ok) {
-                    change_state(&linear_tank, CONST);
+                    change_state(&linear_tank, INC);
                 }
 
                 if (filling_from == 0) {
