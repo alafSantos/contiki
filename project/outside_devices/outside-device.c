@@ -104,7 +104,7 @@ PROCESS_THREAD(device_01_server, ev, data)
   rest_activate_resource(&res_pressure, "sensors/pressure");
   rest_activate_resource(&res_pump, "actuators/pump");
  
-  tank_init(&linear_tank,300,300,CONST,80);
+  tank_init(&linear_tank,400,400,CONST,40);
 
   /* Define application-specific events here. */
   while(1) {

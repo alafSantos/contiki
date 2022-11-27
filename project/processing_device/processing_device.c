@@ -59,9 +59,7 @@
 
 /* FIXME: This server address is hard-coded for Cooja and link-local for unconnected border router. */
 // 2001:0660:4403:04c2::b070
-#define DEV_0(ipaddr) uip_ip6addr(ipaddr, 0x2001, 0x0660, 0x4403, 0x04c2, 0x0, 0x0, 0x0, 0xb070)
-#define DEV_1(ipaddr) uip_ip6addr(ipaddr, 0x2001, 0x0660, 0x4403, 0x04c2, 0x0, 0x0, 0x0, 0x2450)
-#define DEV_CR(ipaddr) uip_ip6addr(ipaddr, 0x2001, 0x0660, 0x4403, 0x04c2, 0x0, 0x0, 0x0, 0x2352)
+#include "../ips.h"
 /* #define SERVER_NODE(ipaddr)   uip_ip6addr(ipaddr, 0xbbbb, 0, 0, 0, 0, 0, 0, 0x1) */
 
 #define LOCAL_PORT UIP_HTONS(COAP_DEFAULT_PORT + 1)
