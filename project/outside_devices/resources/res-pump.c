@@ -87,7 +87,7 @@ res_post_handler(void *request, void *response, uint8_t *buffer, uint16_t prefer
       
     } else if(strncmp(command, "OFF", len) == 0) {
       PRINTF("Turning OFF pump\n");
-      change_state(&linear_tank,INC);
+      change_state(&linear_tank,CONST);
       REST.set_response_status(response, REST.status.OK);
     } else {
       PRINTF("Received wrong data\n");

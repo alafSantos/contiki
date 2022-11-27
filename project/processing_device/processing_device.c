@@ -61,6 +61,7 @@
 // 2001:0660:4403:04c2::b070
 #define DEV_0(ipaddr) uip_ip6addr(ipaddr, 0x2001, 0x0660, 0x4403, 0x04c2, 0x0, 0x0, 0x0, 0xb070)
 #define DEV_1(ipaddr) uip_ip6addr(ipaddr, 0x2001, 0x0660, 0x4403, 0x04c2, 0x0, 0x0, 0x0, 0x2450)
+#define DEV_CR(ipaddr) uip_ip6addr(ipaddr, 0x2001, 0x0660, 0x4403, 0x04c2, 0x0, 0x0, 0x0, 0x2352)
 /* #define SERVER_NODE(ipaddr)   uip_ip6addr(ipaddr, 0xbbbb, 0, 0, 0, 0, 0, 0, 0x1) */
 
 #define LOCAL_PORT UIP_HTONS(COAP_DEFAULT_PORT + 1)
@@ -68,21 +69,27 @@
 
 #define TOGGLE_INTERVAL 5
 #define LOW_THRESHOLD 11
-#define HIGH_THRESHOLD 200
+#define HIGH_THRESHOLD 250
 #define PROCESSING_TIME 20
 
-PROCESS(er_example_client, "Erbium Example Client");
-AUTOSTART_PROCESSES(&er_example_client);
+#define IP_DEV_0 0
+#define IP_DEV_1 1
+#define IP_DEV_CR 2
 
-uip_ipaddr_t server_ipaddr[2];
+#define REQ_GET 0
+#define REQ_PUMP_ON 1
+#define REQ_PUMP_OFF 2
+#define REQ_ALARM 3
+
+uip_ipaddr_t server_ipaddr[3];
 static struct etimer et;
 linear_tank_t linear_tank;
 
 /* Example URIs that can be queried. */
-#define NUMBER_OF_URLS 2
+#define NUMBER_OF_URLS 3
 /* leading and ending slashes only for demo purposes, get cropped automatically when setting the Uri-Path */
 char *service_urls[NUMBER_OF_URLS] =
-    {"/sensors/pressure", "/actuators/pump"};
+    {"/sensors/pressure", "/actuators/pump", "/alarm"};
 
 enum processing_state_t {
     TRY_FILLING,
@@ -90,6 +97,7 @@ enum processing_state_t {
     WAITING,
     EMPTYING
 };
+
 static enum processing_state_t processing_state;
 
 static float response_pressure = -1;
@@ -113,7 +121,8 @@ void get_pressure_handler(void *response) {
     sscanf(buffer, "%f", &response_pressure);
     printf(" %f\n", response_pressure);
 }
-int ok = 0;
+
+static int ok = 0;
 void post_pump_handler(void *response) {
     ok = 1;
     unsigned int code = ((coap_packet_t *)response)->code;
@@ -122,20 +131,23 @@ void post_pump_handler(void *response) {
         ok = 0;
         return;
     }
-    //printf("Request OK\n");
 }
+
+PROCESS(er_example_client, "Processing device client");
+AUTOSTART_PROCESSES(&er_example_client);
 
 PROCESS_THREAD(er_example_client, ev, data) {
     PROCESS_BEGIN();
 
-    static coap_packet_t request[3]; /* This way the packet can be treated as pointer as usual. */
+    static coap_packet_t request[4]; /* This way the packet can be treated as pointer as usual. */
 
-    DEV_0(&server_ipaddr[0]);
-    DEV_1(&server_ipaddr[1]);
+    DEV_0(&server_ipaddr[IP_DEV_0]);
+    DEV_1(&server_ipaddr[IP_DEV_1]);
+    DEV_CR(&server_ipaddr[IP_DEV_CR]);
 
     /* receives all CoAP messages */
     coap_init_engine();
-    tank_init(&linear_tank, 300, 0, CONST, 80);
+    tank_init(&linear_tank, 300, 0, CONST, 40);
     processing_state = EMPTYING;
     etimer_set(&et, TOGGLE_INTERVAL * CLOCK_SECOND);
     static float pressure = 0;
@@ -143,16 +155,16 @@ PROCESS_THREAD(er_example_client, ev, data) {
 
     static const char *msg[] = {"ON", "OFF"};
 
-    coap_init_message(&request[0], COAP_TYPE_CON, COAP_GET, 0);
-    coap_set_header_uri_path(&request[0], service_urls[0]);
+    coap_init_message(&request[REQ_GET], COAP_TYPE_CON, COAP_GET, 0);
+    coap_set_header_uri_path(&request[REQ_GET], service_urls[0]);
 
-    coap_init_message(&request[1], COAP_TYPE_CON, COAP_POST, 0);
-    coap_set_header_uri_path(&request[1], service_urls[1]);
-    coap_set_payload(&request[1], (uint8_t *)msg[0], /*sizeof(msg[0]) - 1*/ strlen(msg[0]));
+    coap_init_message(&request[REQ_PUMP_ON], COAP_TYPE_CON, COAP_POST, 0);
+    coap_set_header_uri_path(&request[REQ_PUMP_ON], service_urls[1]);
+    coap_set_payload(&request[REQ_PUMP_ON], (uint8_t *)msg[0], /*sizeof(msg[0]) - 1*/ strlen(msg[0]));
 
-    coap_init_message(&request[2], COAP_TYPE_CON, COAP_POST, 0);
-    coap_set_header_uri_path(&request[2], service_urls[1]);
-    coap_set_payload(&request[2], (uint8_t *)msg[1], strlen(msg[1]));
+    coap_init_message(&request[REQ_PUMP_OFF], COAP_TYPE_CON, COAP_POST, 0);
+    coap_set_header_uri_path(&request[REQ_PUMP_OFF], service_urls[1]);
+    coap_set_payload(&request[REQ_PUMP_OFF], (uint8_t *)msg[1], strlen(msg[1]));
 
     while (1) {
         PROCESS_YIELD();
@@ -191,8 +203,17 @@ PROCESS_THREAD(er_example_client, ev, data) {
                 if (ok) {
                     change_state(&linear_tank, CONST);
                     etimer_stop(&et);
-                    PROCESS_WAIT_EVENT();
                 }
+
+                coap_init_message(&request[REQ_ALARM], COAP_TYPE_CON, COAP_POST, 0);
+                coap_set_header_uri_path(&request[REQ_ALARM], service_urls[2]);
+
+                ok = 0;
+                while (!ok) {
+                    COAP_BLOCKING_REQUEST(&server_ipaddr[IP_DEV_CR], REMOTE_PORT, &request[3],
+                                          post_pump_handler);
+                }
+                PROCESS_WAIT_EVENT();
             }
 
             // Can start a filling cycle
@@ -202,28 +223,11 @@ PROCESS_THREAD(er_example_client, ev, data) {
                 }
                 printf("Asking pump on to %d\n", filling_from);
 
-                COAP_BLOCKING_REQUEST(&server_ipaddr[filling_from], REMOTE_PORT, &request[1],
+                COAP_BLOCKING_REQUEST(&server_ipaddr[filling_from], REMOTE_PORT, &request[REQ_PUMP_ON],
                                       post_pump_handler);
                 if (ok) {
                     change_state(&linear_tank, INC);
                     processing_state = FILLING;
-                }
-            }
-
-            // Tank from which i'm filling is empty
-            if (processing_state == FILLING && dev_pressures[filling_from] < LOW_THRESHOLD) {
-                printf("Swtiching to secondary tank\n");
-                COAP_BLOCKING_REQUEST(&server_ipaddr[filling_from], REMOTE_PORT, &request[2],
-                                      post_pump_handler);
-                if (ok) {
-                    change_state(&linear_tank, INC);
-                }
-
-                if (filling_from == 0) {
-                    // switch to secondary tank
-                } else if (dev_pressures[0] > LOW_THRESHOLD) {
-                    // primary tank is again full
-                } else {
                 }
             }
 
@@ -236,7 +240,7 @@ PROCESS_THREAD(er_example_client, ev, data) {
 
                 if (ok) {
                     processing_state = WAITING;
-                    change_state(&linear_tank, DEC);
+                    change_state(&linear_tank, CONST);
 
                     etimer_stop(&et);
                     etimer_set(&et, PROCESSING_TIME * CLOCK_SECOND);
@@ -245,6 +249,18 @@ PROCESS_THREAD(er_example_client, ev, data) {
                     printf("Sleeping for process\n");
                 }
             }
+            
+            // Tank from which i'm filling is empty
+            if (processing_state == FILLING && dev_pressures[filling_from] < LOW_THRESHOLD) {
+                printf("Swtiching to tank\n");
+                COAP_BLOCKING_REQUEST(&server_ipaddr[filling_from], REMOTE_PORT, &request[REQ_PUMP_OFF],
+                                      post_pump_handler);
+                if (ok) {
+                    change_state(&linear_tank, CONST);
+                    processing_state = TRY_FILLING;
+                }
+            }
+
             // wait time finished, open outgoing pump and free tank
             if (processing_state == WAITING && etimer_expired(&et)) {
                 processing_state = EMPTYING;
