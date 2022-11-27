@@ -61,7 +61,7 @@ res_get_handler(void *request, void *response, uint8_t *buffer, uint16_t preferr
 {
   float pressure = (float)sensor_get(&linear_tank);
   
-  printf("Recevied GET /pressure\n");
+  printf("Received GET /pressure\n");
 
   unsigned int accept = -1;
   REST.get_header_accept(request, &accept);
